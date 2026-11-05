@@ -1,1 +1,18 @@
-
+{
+  "republic": "Republic of the Philippines",
+  "province_line": "Province Name • Municipality Name",
+  "barangay_full": "BARANGAY NAME",
+  "barangay_short": "BALUD",
+  "city_line": "Town name, Province Name",
+  "card_title": "BARANGAY RESIDENT'S CARD",
+  "punong_name": "Punong Barangay Name",
+  "punong_title": "PUNONG BARANGAY",
+  "emergency_defaults": {
+    "name": "JUAN DELA CRUZ",
+    "relation": "Brother",
+    "contact": "09987654321"
+  },
+  "qr_minimal_mode": false,
+  "qr_hmac_secret": null,
+  "photo_gc_dry_run": false
+}
