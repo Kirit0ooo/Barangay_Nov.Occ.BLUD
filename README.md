@@ -106,7 +106,6 @@ D:\Barangay\
       ├── run.bat                        # thin wrapper -> run.ps1 %* (pins same env; minimal :NOPS hint+pause only if PowerShell absent)
       ├── build.ps1 / build.bat          # release build -> src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/ + logs/build-*.log
       ├── view-logs.bat                  # thin wrapper -> run.ps1 -Logs + explorer logs\ (Explorer open is the double-click value; tail logic lives in run.ps1)
-      # REMOVED 2026-09-10: fix-tauri.bat (subsumed by run.ps1 -Fix; auto npm ci→install covers R5 deps) + fix-libclang.bat (pure Rust, no LLVM)
       └── README.md
 ```
 
@@ -142,7 +141,7 @@ npm install
 run.bat
 :: Option B — PowerShell (CANONICAL, transcript to logs/run-*.log)
 powershell -ExecutionPolicy Bypass -File .\run.ps1
-:: flags: .\run.ps1 -Logs (tail app.log.*+frontend.log+run/build, replaces view-logs.bat) | -Fix (deep clean, replaces fix-tauri.bat) | -NoInstall (fail fast) | -Help | -Audit (warn-only, parity with build.ps1)
+:: flags: .\run.ps1 -Logs (tail app.log.*+frontend.log+run/build, replaces view-logs.bat) | -Fix (deep clean) | -NoInstall (fail fast) | -Help | -Audit (warn-only, parity with build.ps1)
 ::          run.bat forwards all flags: run.bat -Logs / run.bat -Fix / run.bat -Audit
 :: Option C — direct (must pin env first — launchers do this for you)
 npx tauri dev
@@ -358,16 +357,15 @@ npm test                        :: runs all three via node --test
 writes escape to `%APPDATA%`/`%TEMP%`. `run.ps1`/`build.ps1` require PowerShell 5.1+;
 `.bat` files are thin wrappers (`powershell -ExecutionPolicy Bypass -File .\*.ps1 %*`)
 with a legacy cmd fallback. `run.ps1` is canonical — `.bat` wrappers only forward `%*` and set the same env pins.
-`fix-libclang.bat` was **deleted** (obsolete — `rust_xlsxwriter` 0.78 is pure Rust, no LLVM/libclang).
 
 | Script | Purpose | Isolation |
 |---|---|---|
-| `run.ps1` *(canonical)* | prereq check (node/npm/rustc with clear msgs) → auto `npm ci`→`install` if `tauri.cmd` missing (reproducible via `package-lock.json`, covers R5 `scheduled.rs`/`photo_gc`/DOB helpers) → `npx tauri dev`; flags `-Logs` (tails `app.log.*`+`frontend.log`+latest `run/build-*.log` and exits) `-Fix` (deep clean `node_modules`+`.npm-cache` then `npm ci`→`install`, subsumes `fix-tauri.bat`) `-NoInstall` `-Help` `-Audit` (warn-only cargo audit + npm audit, parity with `build.ps1 -Audit`); `Start-Transcript` to `logs/run-*.log` | `logs/run-*.log` + env pins above |
+| `run.ps1` *(canonical)* | prereq check (node/npm/rustc with clear msgs) → auto `npm ci`→`install` if `tauri.cmd` missing (reproducible via `package-lock.json`, covers R5 `scheduled.rs`/`photo_gc`/DOB helpers) → `npx tauri dev`; flags `-Logs` (tails `app.log.*`+`frontend.log`+latest `run/build-*.log` and exits) `-Fix` (deep clean `node_modules`+`.npm-cache` then `npm ci`→`install`) `-NoInstall` `-Help` `-Audit` (warn-only cargo audit + npm audit, parity with `build.ps1 -Audit`); `Start-Transcript` to `logs/run-*.log` | `logs/run-*.log` + env pins above |
 | `run.bat` | **thin wrapper** → `run.ps1 %*` (same env pins before `powershell`); minimal `:NOPS` hint+pause only if PowerShell absent; forwards all flags | same pins, `logs/run-*.log` |
 | `build.ps1` *(canonical)* | prereq check → `npm ci`→`install` if needed → `rustup target add` → `npx tauri build --target x86_64-pc-windows-msvc` → `bundle/msi/`+`bundle/nsis/`; transcript | `logs/build-*.log` + `src-tauri/target` |
 | `build.bat` | **thin wrapper** → `build.ps1 %*` (same env pins); legacy `:NOPS` fallback only if PowerShell absent | same pins |
 | `view-logs.bat` | **thin wrapper** → `run.ps1 -Logs` + `explorer logs\` (Explorer open is the double-click value; tail logic lives in `run.ps1`) | read-only, no env writes |
-| ~~`fix-tauri.bat`~~ | **deleted 2026-09-10** — functionality fully subsumed by `run.ps1 -Fix` (deep clean) + auto-install (non-destructive); no longer needed. For manual clean: `powershell -ExecutionPolicy Bypass -File .\run.ps1 -Fix` | was cache pinned to `.\.npm-cache` |
+
 
 `main.rs` pins `TMP/TEMP/TMPDIR/WEBVIEW2_USER_DATA_FOLDER` to `tmp/` at startup (`tmp/webview2/`).
 
@@ -383,10 +381,6 @@ with a legacy cmd fallback. `run.ps1` is canonical — `.bat` wrappers only forw
 * ID `MAX(substr(...,-5))` per year avoids `COUNT` reuse; R2 retries `MAX→INSERT` once on UNIQUE `resident_id` violation (`BEGIN IMMEDIATE` + re-query MAX) and cleans orphan photo on each failure.
 * R4 Excel import guards: header/width desync asserted (`37` cols), header count mismatch warns & rejects severely malformed sheets, row `len()>headers` truncated, missing columns padded as empty, logged via `tracing::warn!`.
 * R5 Scheduled maintenance: `src-tauri/src/scheduled.rs` — `scheduled_backup` (`wal_checkpoint(TRUNCATE)` → `data/backups/scheduled_*.db`, isolated) and `photo_gc` (orphan scan under `data/photos`, logs count, deletes only with flag) wired via `main.rs` + frontend 24h `setInterval` + Settings Scan/Clean buttons. 100% offline.
-
-### Alpine CSP `unsafe-eval` Removal (R6 — completed in M1 pass)
-
-Current CSP carries no `unsafe-eval` (see `src-tauri/tauri.conf.json` `security.csp`; pinned by `tests/regression.test.js` M1 checks) — it was dropped when the Play CDN Tailwind runtime was replaced by prebuilt `src/css/tailwind.css`, and Alpine reactivity is verified working without it in this Tauri version. Only `style-src`/`script-src 'unsafe-inline'` remain for `<style>` blocks and Alpine attributes. No app code introduces `eval`/`new Function`. If a future Alpine upgrade ever requires `eval`, switch to Alpine's CSP build (`https://github.com/alpinejs/alpine#using-the-csp-build`) which forbids `eval` and requires `x-data` to be pre-compiled — then re-verify bindings.
 
 ---
 
