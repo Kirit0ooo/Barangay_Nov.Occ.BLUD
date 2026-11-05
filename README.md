@@ -282,7 +282,7 @@ last_pdf_path TEXT, last_pdf_generated_at TEXT, -- legacy PDF audit trail: DORMA
 ## ID Card — CR100 3.88×2.63"
 
 * **Size:** `98.6 × 66.8 mm` (`CR100_W/H`).
-* **Front:** navy header (Republic / Province / Municipality / Barangay), gold accent, white logo wells (placeholder `LOGO`), title, 1×1 photo card (inner white), signature line, 3-row grid: (Last/First/Middle) → (DOB/Gender/Civil) → (Purok/Contact/Blood), navy ID pill + white `VALID DD-MM-YYYY` chip, punong `RAYMUND ROSILLER R. DE VEYRA` + year chips, micro-footer. Faint `BALUD` watermark (38pt) + guilloche dots.
+* **Front:** navy header (Republic / Province / Municipality / Barangay), gold accent, white logo wells (placeholder `LOGO`), title, 1×1 photo card (inner white), signature line, 3-row grid: (Last/First/Middle) → (DOB/Gender/Civil) → (Purok/Contact/Blood), navy ID pill + white `VALID DD-MM-YYYY` chip, punong `[PUNONG BARANGAY NAME]` + year chips, micro-footer. Faint `BALUD` watermark (38pt) + guilloche dots.
 * **Back:** navy `IN CASE OF EMERGENCY…` bar, Name/Relationship/Address (PUROK…, house/street second line if present)/Contact, yellow validity box, 17 mm QR (white bordered), footer `If found…`.
 * **QR data (JSON):** `{"id","name":"Last, First Middle","dob":"DD-MM-YYYY","purok","contact","valid","status":"remarks"}` rendered via `qrcode` at 200 px (`get_qr_data_url`), fallback 1×1 PNG on error.
 * **Fonts:** the card template requests Source Serif Pro/Inter with locally bundled TTFs (offline, no CDN). Screen preview and print share the exact CR100 geometry (98.6×66.8 seats, photo 20.9×26.9, QR pad 14.6) so WYSIWYG holds.
