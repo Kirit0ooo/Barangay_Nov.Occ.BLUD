@@ -39,16 +39,16 @@ impl Default for CivicConfig {
     fn default() -> Self {
         Self {
             republic: "Republic of the Philippines".to_string(),
-            province_line: "Province of Samar • Municipality of Basey".to_string(),
-            barangay_full: "BARANGAY (NOUVELAS OCCIDENTAL) BALUD".to_string(),
+            province_line: "Province Name • Municipality Name".to_string(),
+            barangay_full: "BARANGAY Name".to_string(),
             barangay_short: "BALUD".to_string(),
-            city_line: "Basey, Samar".to_string(),
+            city_line: "Town Name, Province Name".to_string(),
             card_title: "BARANGAY RESIDENT'S CARD".to_string(),
-            punong_name: "RAYMUND ROSILLER R. DE VEYRA".to_string(),
+            punong_name: "Punong Barangay Name".to_string(),
             punong_title: "PUNONG BARANGAY".to_string(),
             emergency_defaults: EmergencyDefaults {
-                name: "JUANNA DELA CRUZ".to_string(),
-                relation: "SISTER".to_string(),
+                name: "JUAN DELA CRUZ".to_string(),
+                relation: "BROTHER".to_string(),
                 contact: "09987654321".to_string(),
             },
             photo_gc_dry_run: false,
