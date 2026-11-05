@@ -1,4 +1,4 @@
-// Regression tests for repaired HIGH findings — must stay inside D:\Barangay\barangay-id-system\tests\
+// Regression tests for repaired HIGH findings — must stay inside cd <repo>\tests\
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
