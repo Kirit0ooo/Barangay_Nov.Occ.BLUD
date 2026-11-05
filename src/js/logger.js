@@ -1,4 +1,4 @@
-// Isolated frontend logger - all logs stay inside D:\Barangay\barangay-id-system\logs
+// Isolated frontend logger - all logs stay inside cd <repo>\logs
 // Writes to: console + Tauri backend file (logs/frontend.log + app.log) + localStorage buffer
 
 const Logger = (() => {
