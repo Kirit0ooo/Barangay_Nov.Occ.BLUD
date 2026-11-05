@@ -12,16 +12,15 @@ fn fallback_logs_dir() -> PathBuf {
 }
 
 /// Returns the isolated logs directory inside the project.
-/// All logs MUST stay inside D:\Barangay\barangay-id-system\logs
+/// All logs MUST stay inside the project's logs/ directory.
 /// NEVER inside src-tauri (watched by Tauri) -> prevents rebuild loop
 /// P2-9: returns Result instead of panicking — callers fall back to the OS
 /// temp dir with an error log when nothing project-local resolves.
 pub fn get_logs_dir() -> Result<PathBuf, String> {
     // Isolation: prefer <resolved-project-root>/logs so logs always agree
-    // with get_project_root(). Fixed D:\ candidates come LAST with an
-    // existence-check only — never create_dir_all while probing them, or a
-    // non-Windows host would mint a literal `D:\...` junk dir and escape
-    // isolation (same bug class as fixed in db.rs get_project_root).
+    // with get_project_root(). Never create_dir_all while probing fixed
+    // candidates, or a non-Windows host would mint a literal junk dir and
+    // escape isolation (same bug class as fixed in db.rs get_project_root).
     if let Some(root) = crate::db::get_project_root() {
         let candidate = root.join("logs");
         if fs::create_dir_all(&candidate).is_ok() {
@@ -44,16 +43,7 @@ pub fn get_logs_dir() -> Result<PathBuf, String> {
             }
         }
     }
-    // Fixed candidates last, existence-check only — never create.
-    for candidate in [
-        PathBuf::from(r"D:\Barangay\barangay-id-system\logs"),
-        PathBuf::from("/mnt/d/Barangay/barangay-id-system/logs"),
-    ] {
-        if candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-    Err("Isolation violation: cannot resolve project logs dir. Ensure the program is run from D:\\Barangay\\barangay-id-system.".into())
+    Err("Isolation violation: cannot resolve project logs dir. Ensure the program is run from the project folder.".into())
 }
 
 /// M5: cap daily `app.log.YYYY-MM-DD` retention — keep the 30 newest
@@ -149,7 +139,7 @@ pub fn init() -> WorkerGuard {
         .try_init();
 
     tracing::info!("Logging initialized - logs dir: {}", logs_dir.display());
-    tracing::info!("Isolation: all logs stay inside D:\\Barangay\\barangay-id-system\\logs");
+    tracing::info!("Isolation: all logs stay inside the project folder");
 
     guard
 }
