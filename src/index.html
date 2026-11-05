@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>Barangay Resident ID Registration System</title>
+ <link rel="stylesheet" href="css/tailwind.css">
+ <script defer src="vendor/alpine.min.js"></script>
+ 
+ <link rel="stylesheet" href="css/style.css">
+ <link rel="icon" type="image/x-icon" href="../barangay.ico">
+ <script src="js/verbose.js"></script>
+</head>
+<body class="min-h-screen text-slate-900 antialiased selection:bg-amber-200 selection:text-slate-900">
+ <a href="#main-content" class="skip-link">Skip to content</a>
+ <div id="app" x-data="app()" x-init="init()" x-effect="focusView()" @keydown.escape.window="if (currentView === 'detail') closeDetail()">
+ 
+ <!-- NAV — 70/20/10 restrained: navy + solid gold rule, no blur, no gradient -->
+ <nav class="sticky top-0 z-50 border-b border-slate-800 bg-[#0F2B5E] text-white" aria-label="Primary">
+ <div class="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between gap-3 sm:gap-4">
+ <div class="flex items-center gap-3 min-w-0 flex-1">
+ <img src="barangay.png" alt="Barangay Logo" width="48" height="48" class="w-12 h-12 object-contain flex-shrink-0 nav-logo">
+ <div class="min-w-0">
+ <h1 class="text-[13px] sm:text-[15px] font-extrabold tracking-tight leading-none truncate uppercase">RESIDENT ID SYSTEM</h1>
+ <p class="text-[11px] tracking-wide text-slate-300 truncate">Barangay Nouvelas Occidental (Balud), Basey Samar</p>
+ </div>
+ </div>
+ <!-- Current-view orientation chip — tab strip is hidden in kiosk mode, so the
+      nav itself tells the officer which screen is active. -->
+ <div class="nav-page" aria-live="polite">
+ <span class="nav-page__dot" aria-hidden="true"></span>
+ <span class="nav-page__label" x-text="navPageTitle()">Dashboard</span>
+ </div>
+ <div hidden>
+ <button role="tab" :aria-selected="currentView === 'dashboard'" @click="currentView = 'dashboard'" :class="currentView === 'dashboard' ? 'bg-white text-[#0F2B5E] shadow-sm ring-2 ring-[#C79C14]' : 'bg-white/10 text-white hover:bg-white/20'" class="px-3.5 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 whitespace-nowrap">Dashboard</button>
+ <button role="tab" :aria-selected="currentView === 'register'" @click="clearForm(); currentView = 'register'" :class="currentView === 'register' ? 'bg-white text-[#0F2B5E] shadow-sm ring-2 ring-[#C79C14]' : 'bg-white/10 text-white hover:bg-white/20'" class="px-3.5 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 whitespace-nowrap">Register</button>
+ <button role="tab" :aria-selected="currentView === 'search'" @click="await searchResidents(); currentView='search'" :class="currentView === 'search' ? 'bg-white text-[#0F2B5E] shadow-sm ring-2 ring-[#C79C14]' : 'bg-white/10 text-white hover:bg-white/20'" class="px-3.5 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 whitespace-nowrap">Search</button>
+ <button role="tab" :aria-selected="currentView === 'settings'" @click="await loadCivicConfig(); currentView = 'settings'" :class="currentView === 'settings' ? 'bg-white text-[#0F2B5E] shadow-sm ring-2 ring-[#C79C14]' : 'bg-white/10 text-white hover:bg-white/20'" class="px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 whitespace-nowrap">Settings</button>
+ </div>
+ </div>
+ <div class="h-[3px] bg-[#C79C14]" aria-hidden="true"></div>
+ </nav>
+
+ <!-- Main -->
+ <main id="main-content" tabindex="-1" class="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 focus:outline-none">
+ 
+ <!-- WELCOME HUB — big service tiles for non-tech-savvy officers -->
+ <div x-show="currentView === 'dashboard'" x-cloak class="space-y-8" x-transition.opacity>
+ <div class="kiosk-head">
+   <h2 class="kiosk-head__title view-title">DASHBOARD</h2>
+ </div>
+ <div class="kiosk-section kiosk-section--registry">
+   <div class="kiosk-section__head">
+     <h3 class="kiosk-section__title">Registry overview</h3>
+   </div>
+   <div class="kiosk-stats">
+     <div class="kiosk-stat kiosk-stat--total" role="region" aria-label="Total Residents">
+       <div class="kiosk-stat__head">
+         <div class="kiosk-stat__icon" aria-hidden="true"><img src="icons/person.png" alt="" aria-hidden="true"></div>
+         <div class="kiosk-stat__label"><span>Total Residents</span></div>
+       </div>
+       <div class="kiosk-stat__value" x-text="stats.total">0</div>
+       <div class="kiosk-stat__meta">Active records in registry</div>
+     </div>
+     <div class="kiosk-stat kiosk-stat--gender" role="region" aria-label="By Gender">
+       <div class="kiosk-stat__head">
+         <div class="kiosk-stat__icon" aria-hidden="true"><img src="icons/users.png" alt="" aria-hidden="true"></div>
+         <div class="kiosk-stat__label"><span>By Gender</span></div>
+       </div>
+       <div class="kiosk-stat__bar">
+         <div class="kiosk-stat__bar-fill kiosk-stat__bar-fill--male" :style="'width:' + (stats.total ? (stats.male/stats.total*100) : 0) + '%'"></div>
+         <div class="kiosk-stat__bar-fill kiosk-stat__bar-fill--female" :style="'width:' + (stats.total ? (stats.female/stats.total*100) : 0) + '%'"></div>
+       </div>
+       <div class="kiosk-stat__ratio">
+         <span class="kiosk-stat__ratio__group">
+           <span class="kiosk-stat__ratio__label--male">Male</span>
+           <span class="kiosk-stat__ratio--male" x-text="stats.male">0</span>
+         </span>
+         <span class="kiosk-stat__ratio__group">
+           <span class="kiosk-stat__ratio__label--female">Female</span>
+           <span class="kiosk-stat__ratio--female" x-text="stats.female">0</span>
+         </span>
+       </div>
+     </div>
+     <div class="kiosk-stat kiosk-stat--year" role="region" aria-label="Registrations This Year">
+       <div class="kiosk-stat__head">
+         <div class="kiosk-stat__icon" aria-hidden="true"><img src="icons/calendar.png" alt="" aria-hidden="true"></div>
+         <div class="kiosk-stat__label"><span>Registrations This Year</span></div>
+       </div>
+       <div class="kiosk-stat__value" x-text="stats.thisYear">0</div>
+       <div class="kiosk-stat__meta">Registered <span x-text="new Date().getFullYear()">2026</span> · current year</div>
+     </div>
+   </div>
+ </div>
+
+ <div class="kiosk-section kiosk-section--status">
+   <div class="kiosk-section__head">
+     <h3 class="kiosk-section__title">Card status</h3>
+   </div>
+   <div class="kiosk-status-group">
+     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12">
+       <div class="kiosk-stat kiosk-stat--active" role="region" aria-label="Active cards — valid IDs currently in circulation">
+         <div class="kiosk-stat__head">
+           <div class="kiosk-stat__icon" aria-hidden="true"><img src="icons/check.png" alt="" aria-hidden="true"></div>
+           <div class="kiosk-stat__label"><span>Active</span></div>
+         </div>
+         <div class="kiosk-stat__value" x-text="stats.active">0</div>
+         <div class="kiosk-stat__meta">Valid cards in circulation</div>
+       </div>
+       <div class="kiosk-stat kiosk-stat--renew" role="region" aria-label="Renew cards — residents whose IDs are marked for renewal">
+         <div class="kiosk-stat__head">
+           <div class="kiosk-stat__icon" aria-hidden="true"><img src="icons/refresh.png" alt="" aria-hidden="true"></div>
+           <div class="kiosk-stat__label"><span>Renew</span></div>
+         </div>
+         <div class="kiosk-stat__value" x-text="stats.renew">0</div>
+         <div class="kiosk-stat__meta">Marked for renewal</div>
+       </div>
+       <div class="kiosk-stat kiosk-stat--lost" role="region" aria-label="Lost cards — IDs reported lost by residents">
+         <div class="kiosk-stat__head">
+           <div class="kiosk-stat__icon" aria-hidden="true"><img src="icons/badge.png" alt="" aria-hidden="true"></div>
+           <div class="kiosk-stat__label"><span>Lost</span></div>
+         </div>
+         <div class="kiosk-stat__value" x-text="stats.lost">0</div>
+         <div class="kiosk-stat__meta">Reported lost</div>
+       </div>
+       <div class="kiosk-stat kiosk-stat--damage" role="region" aria-label="Damage cards — IDs reported damaged by residents">
+         <div class="kiosk-stat__head">
+           <div class="kiosk-stat__icon" aria-hidden="true"><img src="icons/alert.png" alt="" aria-hidden="true"></div>
+           <div class="kiosk-stat__label"><span>Damage</span></div>
+         </div>
+         <div class="kiosk-stat__value" x-text="stats.damage">0</div>
+         <div class="kiosk-stat__meta">Reported damaged</div>
+       </div>
+     </div>
+   </div>
+ </div>
+
+
+
+ <div class="kiosk-section kiosk-section--services">
+   <div class="kiosk-section__head">
+     <h3 class="kiosk-section__title">Services</h3>
+   </div>
+   <div class="kiosk-tiles">
+   <button @click="clearForm(); currentView='register'" class="kiosk-tile kiosk-tile--register" aria-label="New Resident Registration — add a resident and create their ID card">
+     <div class="kiosk-tile__icon" aria-hidden="true"><img src="icons/document.png" alt="" aria-hidden="true"></div>
+     <div class="kiosk-tile__text">
+       <div class="kiosk-tile__title">Start a registration</div>
+       <div class="kiosk-tile__desc">Create a new resident card</div>
+     </div>
+     <div class="kiosk-tile__arrow" aria-hidden="true"><img src="icons/arrow.svg" alt=""></div>
+   </button>
+
+   <button @click="searchResidents(); currentView='search'" class="kiosk-tile kiosk-tile--search" aria-label="Resident List &amp; Search — find, filter, edit &amp; print cards">
+     <div class="kiosk-tile__icon" aria-hidden="true"><img src="icons/search.png" alt="" aria-hidden="true"></div>
+     <div class="kiosk-tile__text">
+       <div class="kiosk-tile__title">Find a resident</div>
+       <div class="kiosk-tile__desc">Look up a resident record</div>
+     </div>
+     <div class="kiosk-tile__arrow" aria-hidden="true"><img src="icons/arrow.svg" alt=""></div>
+   </button>
+
+   <button @click="await loadCivicConfig(); currentView='settings'" class="kiosk-tile kiosk-tile--settings" aria-label="Settings — barangay info, backup, database health">
+     <div class="kiosk-tile__icon" aria-hidden="true"><img src="icons/settings.png" alt="" aria-hidden="true"></div>
+     <div class="kiosk-tile__text">
+       <div class="kiosk-tile__title">Settings</div>
+       <div class="kiosk-tile__desc">Barangay info, backup, database health</div>
+     </div>
+     <div class="kiosk-tile__arrow" aria-hidden="true"><img src="icons/arrow.svg" alt=""></div>
+   </button>
+   </div>
+ </div>
+ </div>
+
+ <!-- REGISTER — premium form system -->
+ <div x-show="currentView === 'register'" x-cloak class="register-view space-y-5" x-transition.opacity>
+<div class="view-head register-head">
+ <button @click="currentView='dashboard'" class="hub-back">← Back to Home</button>
+ <div class="view-head__title-block flex-1 min-w-0">
+ <h2 class="text-2xl font-extrabold tracking-tight text-slate-900 view-title" x-text="editingResident ? 'Edit Resident' : 'Register New Resident'">Register New Resident</h2>
+ </div>
+ <div class="flex items-center gap-2">
+ <button x-show="!editingResident" @click="clearForm" class="action-btn action-btn--secondary register-clear">Clear Form</button>
+ <button x-show="editingResident" @click="goBackFromEdit()" class="action-btn action-btn--secondary" aria-label="Back to resident details"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.74" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back</button>
+ </div>
+</div>
+
+ <form @submit.prevent="saveResident" class="space-y-5">
+ 
+ <!-- Photo + ID — hero card -->
+ <div class="card register-hero">
+ <div class="register-hero__band"></div>
+ <div class="register-hero__inner">
+ <div class="flex flex-col lg:flex-row gap-6">
+ <div class="flex-shrink-0 mx-auto lg:mx-0 text-center lg:text-left">
+ <label for="photo-upload" class="form-field__label">Photo · 1×1 White Background</label>
+ <div class="w-[160px] aspect-square bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl flex items-center justify-center overflow-hidden relative group hover:border-slate-400 hover:bg-slate-100 transition upload-focus mx-auto lg:mx-0 register-photo">
+ <img x-show="form.photoData || editPhotoUrl" x-cloak :src="form.photoData || editPhotoUrl" alt="Resident photo preview" class="max-w-full max-h-full object-contain register-photo__preview">
+ <div x-show="!form.photoData && !editPhotoUrl" x-cloak class="text-center px-3">
+ <div class="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center mx-auto text-slate-400" aria-hidden="true"><img src="icons/ID.png" alt="" width="28" height="28" class="w-7 h-7 object-contain"></div>
+ <div class="text-xs font-semibold text-slate-600 mt-2 register-photo__cta">Click to upload</div>
+ <div class="text-[11px] text-slate-500 register-photo__hint">JPG/PNG · 6MB max</div>
+ </div>
+ <input id="photo-upload" type="file" accept="image/*" @change="handlePhotoUpload" aria-label="Upload photo, JPG or PNG, 6 megabytes max" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer focus:outline-none">
+ </div>
+ <button type="button" x-show="form.photoData || editPhotoUrl" x-cloak @click="form.photoData = ''; form.photo_filename = ''; editPhotoUrl = ''" class="mt-2 text-xs font-semibold text-red-600 hover:text-red-700 register-remove">Remove Photo</button>
+ </div>
+ <div class="flex-1 space-y-4">
+<label for="resident-id" class="form-field__label">Resident ID No. <span class="form-field__req" aria-hidden="true">*</span></label>
+ <div class="register-idrow">
+ <input id="resident-id" type="text" x-model="form.resident_id" @input="onInputUpper($event, 'resident_id')" required placeholder="BRGY-2026-00001" autocomplete="off" spellcheck="false" aria-describedby="resident-id-help" class="form-field__input font-mono text-sm bg-slate-50">
+ <button type="button" @click="generateID" aria-label="Generate next resident ID" class="shrink-0 action-btn action-btn--primary register-generate">Generate</button>
+ </div>
+ <p id="resident-id-help" class="form-field__help">Auto MAX suffix per year · orphan photo cleaned on duplicate.</p>
+ </div>
+ </div>
+ </div>
+ </div>
+
+ <!-- Personal Information -->
+ <div class="form-section register-section">
+ <div class="form-section__head">
+ <div class="register-section__icon" aria-hidden="true"><img src="icons/person.png" alt="" width="16" height="16"></div>
+ <h3 class="form-section__title">Personal Information</h3>
+ <span class="ml-auto hidden sm:block text-xs font-semibold text-slate-500 whitespace-nowrap">* required</span>
+ </div>
+ <div class="form-section__body">
+ <div class="form-grid form-grid--4">
+ <div class="form-field"><label for="inp-last" class="form-field__label">Last Name <span class="form-field__req" aria-hidden="true">*</span></label><input id="inp-last" type="text" x-model="form.last_name" @input="onInputUpper($event, 'last_name')" required autocomplete="family-name" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-first" class="form-field__label">First Name <span class="form-field__req" aria-hidden="true">*</span></label><input id="inp-first" type="text" x-model="form.first_name" @input="onInputUpper($event, 'first_name')" required autocomplete="given-name" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-middle" class="form-field__label">Middle Name</label><input id="inp-middle" type="text" x-model="form.middle_name" @input="onInputUpper($event, 'middle_name')" autocomplete="additional-name" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-suffix" class="form-field__label">Suffix</label><select id="inp-suffix" x-model="form.suffix" class="form-field__select"><option value="">None</option><option value="JR.">Jr.</option><option value="SR.">Sr.</option><option>II</option><option>III</option><option>IV</option></select></div>
+ <div class="form-field"><label for="inp-bdate" class="form-field__label">Birth Date <span class="form-field__req" aria-hidden="true">*</span></label><input id="inp-bdate" type="date" x-model="form.birth_date" required autocomplete="bday" min="1900-01-01" :max="todayISO()" title="YYYY-MM-DD" aria-describedby="bdate-help" class="form-field__input"><p id="bdate-help" class="form-field__help" x-show="form.birth_date" x-text="birthDateHelper()"></p></div>
+ <div class="form-field"><label for="inp-bplace" class="form-field__label">Birth Place</label><input id="inp-bplace" type="text" x-model="form.birth_place" @input="onInputUpper($event, 'birth_place')" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-gender" class="form-field__label">Gender <span class="form-field__req" aria-hidden="true">*</span></label><select id="inp-gender" x-model="form.gender" required class="form-field__select"><option value="">Select...</option><option value="MALE">Male</option><option value="FEMALE">Female</option></select></div>
+ <div class="form-field"><label for="inp-civil" class="form-field__label">Civil Status</label><select id="inp-civil" x-model="form.civil_status" class="form-field__select"><option value="">Select...</option><option value="SINGLE">Single</option><option value="MARRIED">Married</option><option value="WIDOWED">Widowed</option><option value="SEPARATED">Separated</option><option value="DIVORCED">Divorced</option></select></div>
+ <div class="form-field"><label for="inp-citizen" class="form-field__label">Citizenship</label><input id="inp-citizen" type="text" x-model="form.citizenship" @input="onInputUpper($event, 'citizenship')" autocomplete="off" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-occup" class="form-field__label">Occupation</label><input id="inp-occup" type="text" x-model="form.occupation" @input="onInputUpper($event, 'occupation')" autocomplete="organization-title" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-religion" class="form-field__label">Religion</label><input id="inp-religion" type="text" x-model="form.religion" @input="onInputUpper($event, 'religion')" autocomplete="off" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-contact" class="form-field__label">Contact Number</label><input id="inp-contact" type="tel" x-model="form.contact_number" @input="onContactInput($event, 'contact_number')" placeholder="09XX-XXX-XXXX" autocomplete="tel" inputmode="numeric" maxlength="13" class="form-field__input"></div>
+ </div>
+ </div>
+ </div>
+
+ <!-- Address -->
+ <div class="form-section register-section">
+ <div class="form-section__head">
+ <div class="register-section__icon" aria-hidden="true"><img src="icons/address.png" alt="" width="16" height="16"></div>
+ <h3 class="form-section__title">Address</h3>
+ </div>
+ <div class="form-section__body">
+ <div class="form-grid form-grid--4">
+ <div class="form-field"><label for="inp-purok" class="form-field__label">Purok <span class="form-field__req" aria-hidden="true">*</span></label><select id="inp-purok" x-model="form.address_purok" required class="form-field__select"><option value="">Select Purok...</option><option>AVOCADO</option><option>RIMAS</option><option>PASAYAN</option><option>BUBUNAO</option><option>ASLUM</option></select></div>
+ <div class="form-field"><label for="inp-brgy" class="form-field__label">Barangay</label><input id="inp-brgy" type="text" x-model="form.address_barangay" @input="onInputUpper($event, 'address_barangay')" autocomplete="address-level3" class="form-field__input uppercase field-upper" value="(NOUVELAS OCCIDENTAL) BALUD"></div>
+ <div class="form-field"><label for="inp-city" class="form-field__label">City/Municipality <span class="font-normal text-slate-500">· default BASEY, editable</span></label><input id="inp-city" type="text" x-model="form.address_city" @input="onInputUpper($event, 'address_city')" placeholder="BASEY" autocomplete="address-level2" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-prov" class="form-field__label">Province <span class="font-normal text-slate-500">· default SAMAR, editable</span></label><input id="inp-prov" type="text" x-model="form.address_province" @input="onInputUpper($event, 'address_province')" placeholder="SAMAR" autocomplete="address-level1" class="form-field__input uppercase field-upper"></div>
+ </div>
+ </div>
+ </div>
+
+ <!-- Emergency -->
+ <div class="form-section register-section">
+ <div class="form-section__head">
+ <div class="register-section__icon" aria-hidden="true"><img src="icons/contact.png" alt="" width="16" height="16"></div>
+ <h3 class="form-section__title">Emergency Contact</h3>
+ </div>
+ <div class="form-section__body">
+ <div class="form-grid form-grid--3">
+ <div class="form-field"><label for="inp-emer-name" class="form-field__label">Contact Person Name</label><input id="inp-emer-name" type="text" x-model="form.emergency_contact_name" @input="onInputUpper($event, 'emergency_contact_name')" autocomplete="off" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-emer-rel" class="form-field__label">Relationship</label><input id="inp-emer-rel" type="text" x-model="form.emergency_contact_relation" @input="onInputUpper($event, 'emergency_contact_relation')" autocomplete="off" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="inp-emer-tel" class="form-field__label">Contact Number</label><input id="inp-emer-tel" type="tel" x-model="form.emergency_contact_number" @input="onContactInput($event, 'emergency_contact_number')" placeholder="09XX-XXX-XXXX" autocomplete="tel" inputmode="numeric" maxlength="20" class="form-field__input"></div>
+ <div class="form-field sm:col-span-2"><label for="inp-emer-addr" class="form-field__label">Address</label><input id="inp-emer-addr" type="text" x-model="form.emergency_contact_address" @input="onInputUpper($event, 'emergency_contact_address')" autocomplete="off" class="form-field__input uppercase field-upper"></div>
+ </div>
+ </div>
+ </div>
+
+ <!-- Card Status -->
+ <div class="form-section register-section">
+ <div class="form-section__head">
+ <div class="register-section__icon" aria-hidden="true"><img src="icons/card_stats.png" alt="" width="16" height="16"></div>
+ <h3 class="form-section__title">Card Status</h3>
+ <span class="form-field__req" aria-hidden="true">*</span>
+ </div>
+ <div class="form-section__body">
+ <div class="flex gap-2 flex-wrap mb-4" role="radiogroup" aria-label="Card status">
+ <template x-for="opt in ['ACTIVE','RENEW','LOST','DAMAGE']" :key="opt">
+ <button type="button" role="radio" @click="form.remarks = opt" :aria-checked="form.remarks === opt" :class="form.remarks === opt ? 'action-btn action-btn--primary' : 'action-btn action-btn--secondary'" x-text="opt"></button>
+ </template>
+ </div>
+ <div class="form-grid form-grid--2">
+ <div class="form-field"><label for="inp-valid-until" class="form-field__label">ID Expiry Date <span class="font-normal text-slate-500">· auto-filled (1 year), editable</span></label><input id="inp-valid-until" type="date" x-model="form.valid_until" autocomplete="off" :min="todayISO()" aria-describedby="valid-until-help" class="form-field__input"><p id="valid-until-help" class="form-field__help">Default is 1 year from today. Change only if a different expiry is needed.</p></div>
+ </div>
+ <p class="form-field__help">Selected: <span class="font-semibold text-slate-900" x-text="form.remarks || 'None'"></span> · also used for ID validity tracking</p>
+ </div>
+ </div>
+
+ <!-- Actions -->
+ <div class="register-actions">
+ <p class="register-actions__note" x-show="!editingResident">All fields are saved locally. Photos are stored as JPEG in the data folder.</p>
+ <div class="register-actions__btns">
+ <button type="button" x-show="!editingResident" @click="clearForm(); currentView='dashboard'" :disabled="saving" :class="['action-btn', 'action-btn--secondary', { 'opacity-55 cursor-not-allowed': saving }]" title="Clear the form">Cancel</button>
+ <button type="submit" :disabled="saving" :class="['action-btn', 'action-btn--primary', 'register-submit', { 'opacity-55 cursor-not-allowed': saving }]">
+ <svg x-show="saving" class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/><path d="M4 12a8 8 0 018-8" stroke="currentColor" stroke-width="3" stroke-linecap="round" class="opacity-75"/></svg>
+ <span x-text="saving ? 'Saving...' : (editingResident ? 'Update Resident' : 'Register Resident')">Register Resident</span>
+ </button>
+ </div>
+ </div>
+ </form>
+ </div>
+
+ <!-- Search View — premium filter + table -->
+ <div x-show="currentView === 'search'" x-cloak x-init="searchResidents()" class="space-y-5">
+<div class="view-head">
+ <button @click="currentView='dashboard'" class="hub-back">← Back to Home</button>
+ <div class="view-head__title-block">
+ <h2 class="text-2xl font-extrabold tracking-tight text-slate-900 view-title">Search Residents</h2>
+ </div>
+</div>
+ 
+ <div class="card">
+ <div class="p-5 sm:p-6 border-b border-slate-100">
+ <div class="flex flex-col lg:flex-row gap-3">
+ <label for="search-input" class="flex-1 relative">
+ <span class="sr-only">Search by name, ID or contact</span>
+ <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-3.5-3.5"/></svg></span>
+ <input id="search-input" type="text" x-model="searchQuery" @input.debounce.300ms="searchResidents" 
+ placeholder="Search by name, ID number, or contact..." 
+ aria-label="Search by name, ID number, or contact"
+ autocomplete="off"
+ class="w-full border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition uppercase field-upper">
+ </label>
+ <label for="search-purok" class="sr-only">Filter by purok</label>
+ <select id="search-purok" x-model="searchPurok" @change="searchResidents" aria-label="Filter by purok" class="border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition lg:w-48">
+ <option value="">All Puroks</option>
+ <option>AVOCADO</option>
+ <option>RIMAS</option>
+ <option>PASAYAN</option>
+ <option>BUBUNAO</option>
+ <option>ASLUM</option>
+ </select>
+ <label for="search-category" class="sr-only">Sorting category</label>
+ <select id="search-category" x-model="searchCategory" @change="searchResidents" aria-label="Sorting category, filter by card status or sort order" class="border border-slate-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition lg:w-56">
+ <option value="all">All Categories</option>
+ <option value="active">Active</option>
+ <option value="renew">Renew</option>
+ <option value="lost">Lost</option>
+ <option value="damage">Damage</option>
+ <option value="inactive">Inactive</option>
+ <option value="name-az">Sort: Name A-Z</option>
+ <option value="newest">Sort: Newest First</option>
+ <option value="oldest">Sort: Oldest First</option>
+ </select>
+ </div>
+ </div>
+
+ <div class="overflow-x-auto scrollbar-thin">
+ <table class="data-table" role="grid">
+ <caption class="sr-only">Search results — filtered residents</caption>
+ <thead>
+ <tr>
+ <th scope="col">ID No.</th>
+ <th scope="col">Name</th>
+ <th scope="col">Purok</th>
+ <th scope="col">Gender</th>
+ <th scope="col">Birthday</th>
+ <th scope="col">Contact</th>
+ <th scope="col">Status</th>
+ <th scope="col">Actions</th>
+ </tr>
+ </thead>
+ <tbody>
+ <template x-for="resident in pagedResults()" :key="resident.id">
+ <tr :class="{inactive: resident.is_active === 0}">
+ <td class="font-mono text-[13px] font-bold text-blue-700" x-text="resident.resident_id"></td>
+ <td class="font-semibold text-slate-900" x-text="resident.last_name + ', ' + resident.first_name + (resident.middle_name ? ' ' + resident.middle_name : '')"></td>
+ <td><span class="purok-pill" x-text="resident.address_purok || 'N/A'"></span></td>
+ <td class="text-slate-700" x-text="resident.gender"></td>
+ <td class="text-slate-500 text-xs" x-text="formatDateDDMMYYYY(resident.birth_date)"></td>
+ <td class="text-slate-700" x-text="resident.contact_number || 'N/A'"></td>
+ <td>
+ <span :class="statusPillClass(resident)" class="status-pill" x-text="statusLabel(resident)"></span>
+ </td>
+ <td>
+ <div class="flex justify-end items-center gap-1.5" role="group" :aria-label="`Actions for ${resident.last_name}, ${resident.first_name}`">
+ <button @click="viewResident(resident.id)" class="action-btn action-btn--view" aria-label="View details" title="View details"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.95" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><span class="hidden sm:inline">View</span></button>
+ <button @click="editResident(resident.id)" class="action-btn action-btn--edit" aria-label="Edit resident" title="Edit resident"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.95" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg><span class="hidden sm:inline">Edit</span></button>
+ <button x-show="isExpired(resident)" @click="renewResident(resident.id)" class="action-btn action-btn--renew" aria-label="Renew ID card" title="Renew ID card (extends validity 1 year)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.95" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 11-2.6-6.4"/><path d="M21 3v6h-6"/></svg><span class="hidden sm:inline">Renew</span></button>
+ <button @click="deleteResident(resident.id)" class="action-btn action-btn--delete" aria-label="Mark as inactive" title="Mark as inactive"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.95" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg><span class="hidden sm:inline">Delete</span></button>
+ </div>
+ </td>
+ </tr>
+ </template>
+  <tr x-show="searchResults.length === 0 && !searching">
+ <td colspan="8"><div class="empty-state"><div class="empty-state__icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-3.5-3.5"/></svg></div><div class="empty-state__title" x-text="searchQuery ? 'No match' : 'No residents yet'">No residents yet</div><div class="empty-state__desc" x-text="searchQuery ? 'Try a different name, ID, or purok.' : 'No residents to show yet.'"></div></div></td>
+ </tr>
+ </tbody>
+ </table>
+ </div>
+ <div x-show="totalSearchPages() > 1" class="flex items-center justify-between gap-3 px-5 py-3 border-t border-slate-100">
+ <span class="text-xs text-slate-500" x-text="searchRangeText()"></span>
+ <div class="flex items-center gap-2">
+ <button @click="prevSearchPage()" :disabled="searchPage <= 1" aria-label="Previous page" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition min-h-[40px] disabled:opacity-50 disabled:cursor-not-allowed">Prev</button>
+ <span class="text-xs font-semibold text-slate-700" x-text="'Page ' + searchPage + ' of ' + totalSearchPages()"></span>
+ <button @click="nextSearchPage()" :disabled="searchPage >= totalSearchPages()" aria-label="Next page" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold transition min-h-[40px] disabled:opacity-50 disabled:cursor-not-allowed">Next</button>
+ </div>
+ </div>
+ </div>
+ </div>
+
+ <!-- Settings View — semantic card sections -->
+ <div x-show="currentView === 'settings'" x-cloak class="space-y-5">
+<div class="view-head">
+ <button @click="currentView='dashboard'" class="hub-back">← Back to Home</button>
+ <div class="view-head__title-block">
+ <h2 class="text-2xl font-extrabold tracking-tight text-slate-900 view-title">Settings</h2>
+ </div>
+</div>
+ 
+ <div class="card card--section">
+ <div class="section-head">
+ <img src="icons/barangay_information.png" alt="" aria-hidden="true" class="section-head__icon">
+ <div class="section-head__title">Barangay Information</div>
+ </div>
+ <div class="p-5 sm:p-6 space-y-4">
+ <p class="text-sm text-slate-600">These details appear on every ID card. Changes save automatically to the system config.</p>
+ <div class="form-grid form-grid--2">
+ <div class="form-field"><label for="set-brgy" class="form-field__label">Barangay Name</label><input id="set-brgy" type="text" x-model="settings.barangayName" @input="onSettingsUpper($event, 'barangayName')" autocomplete="off" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field"><label for="set-city" class="form-field__label">City/Municipality</label><input id="set-city" type="text" x-model="settings.cityName" @input="onSettingsUpper($event, 'cityName')" autocomplete="off" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field sm:col-span-2"><label for="set-prov" class="form-field__label">Province Line (e.g., "Province of Samar • Municipality of Basey")</label><input id="set-prov" type="text" x-model="settings.provinceName" @input="onSettingsUpper($event, 'provinceName')" autocomplete="off" class="form-field__input uppercase field-upper"></div>
+ <div class="form-field sm:col-span-2"><label for="set-punong" class="form-field__label">Barangay Captain (printed on ID cards)</label><input id="set-punong" type="text" x-model="settings.punongName" @input="onSettingsUpper($event, 'punongName')" autocomplete="off" class="form-field__input uppercase field-upper"></div>
+ </div>
+ <div class="settings-actions">
+ <button @click="saveSettings" class="action-btn action-btn--primary settings-btn--save">Save Changes</button>
+ <button @click="loadCivicConfig" class="action-btn action-btn--secondary settings-btn--reset">Reset to Saved</button>
+ <div class="flex gap-2 items-center">
+  <label class="action-btn action-btn--secondary action-chip settings-btn--theme" title="Apply a red-tinted backdrop theme (opt-in, defaults off). Saved in localStorage.">
+   <input type="checkbox" :checked="theme === 'red-gradient'" @change="setTheme($event.target.checked)" class="w-4 h-4 rounded border-slate-300 settings-checkbox" aria-label="Red gradient theme">
+   <span class="text-xs font-bold text-slate-700">Red gradient theme</span>
+  </label>
+ </div>
+ </div>
+</div>
+</div>
+
+<div class="card card--section">
+ <div class="section-head">
+ <img src="icons/data_maintenance.png" alt="" aria-hidden="true" class="section-head__icon">
+ <div class="section-head__title">Data &amp; Maintenance</div>
+ </div>
+ <div class="p-5 sm:p-6">
+ <div class="settings-grid">
+ <button @click="exportAllExcel" class="action-btn action-btn--secondary action-chip settings-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg><span class="text-xs font-bold text-slate-700">Export All to Excel</span></button>
+ <button @click="importExcel" class="action-btn action-btn--secondary action-chip settings-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg><span class="text-xs font-bold text-slate-700">Import from Excel</span></button>
+ <button @click="backupDB" class="action-btn action-btn--secondary action-chip settings-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l9 4.5v9L12 20 3 15.5v-9L12 2z"/><path d="M12 12L3 7.5M12 12l9-4.5M12 12v8"/></svg><span class="text-xs font-bold text-slate-700">Backup Database</span></button>
+ <label class="action-btn action-btn--secondary action-chip settings-chip" title="Run the daily automatic backup right now (saves a copy to the backups folder)">
+ <input type="checkbox" x-model="backupRunScheduled" class="w-4 h-4 rounded border-slate-300 settings-checkbox" aria-label="Run scheduled backup now">
+ <span class="text-xs font-bold text-slate-700">Run daily backup now</span>
+ </label>
+ <button @click="restoreDB" class="action-btn action-btn--secondary action-chip settings-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 11-2.6-6.4"/><path d="M21 3v6h-6"/></svg><span class="text-xs font-bold text-slate-700">Restore from Backup</span></button>
+ <button @click="scanPhotos()" class="action-btn action-btn--secondary action-chip settings-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><circle cx="8" cy="13" r="1.5"/></svg><span class="text-xs font-bold text-slate-700">Check Photos</span></button>
+ </div>
+ <template x-if="photoScanResult">
+ <div class="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 text-sm">
+ <div class="flex items-center justify-between mb-2">
+ <span class="font-semibold text-slate-700">Photo Check Results</span>
+ <button @click="photoScanResult = null" class="text-slate-400 hover:text-slate-600" aria-label="Dismiss">×</button>
+ </div>
+ <div class="grid sm:grid-cols-3 gap-2 text-xs text-slate-600 mb-2">
+ <div>Total photos: <span class="font-mono text-slate-900" x-text="photoScanResult.total_files"></span></div>
+ <div>In use: <span class="font-mono text-slate-900" x-text="photoScanResult.referenced"></span></div>
+ <div>Unused: <span class="font-mono text-red-600" x-text="photoScanResult.orphan_count"></span></div>
+ </div>
+ <template x-if="photoScanResult && photoScanResult.orphan_count > 0">
+ <button @click="cleanOrphans()" class="action-btn action-btn--warning w-full">Delete Unused Photos</button>
+ <p class="text-xs text-slate-500 mt-1 text-center">This cannot be undone.</p>
+ </template>
+ </div>
+ </template>
+ <div x-show="bulkProgress.inProgress || bulkProgress.total > 0" class="mt-3 border-t border-slate-100 pt-3">
+ <div class="flex items-center justify-between text-xs font-semibold text-slate-600">
+ <span x-text="bulkProgress.inProgress ? ('Printing ' + bulkProgress.current + ' of ' + (bulkProgress.total || '…')) : ('Done: ' + bulkProgress.current + ' of ' + bulkProgress.total + (bulkProgress.failures ? ' · ' + bulkProgress.failures + ' failed' : ' · all successful'))"></span>
+ <span class="font-mono" x-text="bulkProgress.percent + '%'"></span>
+ </div>
+ <div class="settings-progress__track"><div class="settings-progress__fill" :style="'width:'+bulkProgress.percent+'%'"></div></div>
+ <ul class="mt-1.5 space-y-0.5 max-h-24 overflow-y-auto text-xs font-mono text-slate-500">
+ <template x-for="item in bulkProgress.recent.slice().reverse()" :key="item.file + item.status">
+ <li class="flex items-center gap-1.5" :class="item.status === 'failed' ? 'text-red-600' : 'text-slate-500'"><svg x-show="item.status === 'failed'" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.84" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg><svg x-show="item.status !== 'failed'" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.84" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg><span x-text="item.file"></span></li>
+ </template>
+  </ul>
+ </div>
+ <p class="text-xs text-slate-500 mt-3">Excel files: "Export All" saves as BACKUP-YYYY-MM-DD.xlsx. Use "Import from Excel" to update records (matches by ID No.).</p>
+ </div>
+ </div>
+
+ <div class="card card--section">
+ <div class="section-head">
+ <img src="icons/printing.png" alt="" aria-hidden="true" class="section-head__icon">
+ <div class="section-head__title">Printing</div>
+ </div>
+ <div class="p-5 sm:p-6">
+ <div class="settings-grid">
+ <button @click="printAllCards" class="action-btn action-btn--secondary action-chip settings-chip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.13" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg><span class="text-xs font-bold text-slate-700">Print All ID Cards</span></button>
+<template x-if="bulkProgress.inProgress"><button @click="cancelBulkPrint" class="action-btn action-btn--delete action-chip"><span class="text-xs font-bold">Cancel Print</span></button></template>
+ </div>
+ <p class="text-xs text-slate-500 mt-3">Prints one card per active resident. Opens your browser's print dialog — choose "Save as PDF" to create a digital copy.</p>
+ </div>
+ </div>
+
+ <div class="card card--section">
+ <div class="section-head">
+ <img src="icons/system_logs.png" alt="" aria-hidden="true" class="section-head__icon">
+ <div class="section-head__title">System Logs</div>
+ </div>
+ <div class="p-5 sm:p-6">
+ <p class="text-sm text-slate-600">All activity logs are saved in the system logs folder.</p>
+ <div class="settings-grid settings-grid--log">
+ <button @click="Logger.download()" class="action-btn action-btn--secondary settings-chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg><span class="text-xs font-bold text-slate-700">Download Activity Logs</span></button>
+ <button @click="openLogsFolder()" class="action-btn action-btn--primary settings-chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg><span class="text-xs font-bold text-slate-100">Open Logs Folder</span></button>
+ <button @click="Logger.clear(); showToast('Frontend log buffer cleared', 'info')" class="action-btn action-btn--secondary settings-chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg><span class="text-xs font-bold text-slate-700">Clear Buffer</span></button>
+ </div>
+ <div class="log-info">
+ <div class="log-info__label">Where logs live</div>
+ <p class="log-info__text text-xs text-slate-500">Backend: <code class="font-mono">logs/app.log</code> daily + <code class="font-mono">logs/frontend.log</code> · Frontend: localStorage 500 entries · <code class="font-mono">RUST_LOG=debug</code></p>
+ </div>
+ </div>
+ </div>
+
+ <div class="card card--section card--about">
+ <div class="section-head">
+ <img src="icons/about.png" alt="" aria-hidden="true" class="section-head__icon">
+ <div class="section-head__title">About</div>
+ </div>
+ <div class="p-5 sm:p-6">
+ <div class="about-grid">
+ <div><div class="about-kv__key">System</div><div class="about-kv__value">Barangay Resident ID</div></div>
+ <div><div class="about-kv__key">Version</div><div class="about-kv__value font-mono">1.0.0</div></div>
+ <div><div class="about-kv__key">Database</div><div class="about-kv__value">SQLite · isolated</div></div>
+ </div>
+ <p class="about-note text-xs text-slate-400 mt-4">All data stored locally on this computer. Regular backups recommended. Offline 100%.</p>
+ </div>
+ </div>
+</div>
+
+ <!-- DETAIL VIEW — resident details (replaces modal) — x-cloak prevents FOUC leak onto other tabs -->
+ <div x-show="currentView === 'detail'" x-cloak class="detail-view space-y-5">
+<div class="view-head detail-view-head">
+ <button @click="closeDetail(); currentView='dashboard'" class="hub-back detail-view-back">← Back to Home</button>
+ <div class="view-head__title-block">
+ <h2 class="text-2xl font-extrabold tracking-tight text-slate-900 view-title">Resident Details</h2>
+ </div>
+</div>
+
+ <template x-if="detailResident">
+ <div class="detail-view-body">
+  <div class="card detail-view-hero">
+   <div class="detail-view-hero__band" aria-hidden="true"></div>
+   <div class="p-5 sm:p-6">
+    <div class="detail-view-hero__layout">
+     <div class="detail-photo" aria-hidden="true">
+      <img :src="detailPhoto" :alt="(detailResident ? detailResident.last_name + ', ' + detailResident.first_name + ' photo' : 'Resident photo')" class="w-full h-full object-cover" x-show="detailPhoto">
+      <div class="detail-photo--empty" x-show="!detailPhoto"><span>No Photo</span><span class="font-normal">1×1</span></div>
+     </div>
+     <div class="flex-1 min-w-0">
+      <h4 class="detail-view-name" :title="(detailResident.last_name + ', ' + detailResident.first_name + (detailResident.suffix ? ' ' + detailResident.suffix : ''))" x-text="detailResident.last_name + ', ' + detailResident.first_name + (detailResident.suffix ? ' ' + detailResident.suffix : '')"></h4>
+      <p class="detail-view-id" x-text="detailResident.resident_id"></p>
+      <div class="detail-view-pills">
+       <span class="detail-view-purok" x-text="'Purok ' + (detailResident.address_purok || 'N/A')"></span>
+       <span x-show="detailResident.gender === 'MALE'" class="status-pill status-pill--active pill-male">Male</span>
+       <span x-show="detailResident.gender === 'FEMALE'" class="status-pill status-pill--active pill-female">Female</span>
+       <span :class="statusPillClass(detailResident)" x-text="statusLabel(detailResident)"></span>
+      </div>
+      <div class="detail-view-validity">
+       <span class="detail-view-validity__icon" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.95" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span>
+       <span>ID valid until <strong x-text="detailResident.valid_until ? formatDateDDMMYYYY(detailResident.valid_until) : 'N/A'">N/A</strong></span>
+       <span :class="detailResident.valid_until ? (isExpired(detailResident) ? 'status-pill status-pill--expired' : 'status-pill status-pill--active') : 'status-pill status-pill--inactive'" x-text="expiryCountdown(detailResident)">No expiry set</span>
+      </div>
+     </div>
+    </div>
+    <div class="detail-view-groups">
+     <div>
+      <h5 class="detail-view-group__title">Personal Information</h5>
+      <dl class="detail-view-fields detail-view-fields--2col">
+       <div class="detail-field"><dt class="detail-field__label">Middle Name</dt><dd class="detail-field__value" x-text="detailResident.middle_name || 'N/A'"></dd></div>
+       <div class="detail-field"><dt class="detail-field__label">Birth Date</dt><dd class="detail-field__value" x-text="formatDateDDMMYYYY(detailResident.birth_date)"></dd></div>
+       <div class="detail-field"><dt class="detail-field__label">Civil Status</dt><dd class="detail-field__value" x-text="detailResident.civil_status || 'N/A'"></dd></div>
+       <div class="detail-field"><dt class="detail-field__label">Citizenship</dt><dd class="detail-field__value" x-text="detailResident.citizenship || 'Filipino'"></dd></div>
+       <div class="detail-field"><dt class="detail-field__label">Occupation</dt><dd class="detail-field__value" x-text="detailResident.occupation || 'N/A'"></dd></div>
+       <div class="detail-field"><dt class="detail-field__label">Religion</dt><dd class="detail-field__value" x-text="detailResident.religion || 'N/A'"></dd></div>
+       <div class="detail-field"><dt class="detail-field__label">Contact</dt><dd class="detail-field__value" x-text="detailResident.contact_number || 'N/A'"></dd></div>
+      </dl>
+     </div>
+     <div>
+      <h5 class="detail-view-group__title">Emergency Contact</h5>
+      <dl class="detail-view-fields">
+       <div class="detail-field"><dt class="detail-field__label">Contact Person</dt><dd class="detail-field__value" x-text="detailResident.emergency_contact_name || 'N/A'"></dd></div>
+       <div class="detail-field"><dt class="detail-field__label">Relationship</dt><dd class="detail-field__value" x-text="detailResident.emergency_contact_relation || 'N/A'"></dd></div>
+       <div class="detail-field"><dt class="detail-field__label">Contact Number</dt><dd class="detail-field__value" x-text="detailResident.emergency_contact_number || 'N/A'"></dd></div>
+       <div class="detail-field"><dt class="detail-field__label">Contact Address:</dt><dd class="detail-field__value" x-text="detailResident.emergency_contact_address || 'N/A'"></dd></div>
+      </dl>
+     </div>
+    </div>
+    <div class="mt-5 detail-address-group">
+     <h5 class="detail-view-group__title">Full Address</h5>
+     <p class="detail-view-address"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg><span x-text="[detailResident.address_street, detailResident.address_purok ? 'Purok ' + detailResident.address_purok : null, detailResident.address_barangay, detailResident.address_city, detailResident.address_province].filter(Boolean).join(', ')"></span></p>
+    </div>
+   </div>
+  </div>
+  <div class="detail-view-actions">
+   <div class="detail-view-actions__secondary">
+    <button @click="editResident(detailResident.id)" class="action-btn action-btn--edit detail-view-actions__btn">Edit</button>
+    <template x-if="isExpired(detailResident)">
+     <button @click="renewResident(detailResident.id); closeDetail()" class="action-btn action-btn--renew detail-view-actions__btn">Renew ID</button>
+    </template>
+   </div>
+   <div class="detail-view-actions__primary">
+    <button @click="previewResidentCard(detailResident.id)" class="action-btn action-btn--secondary detail-view-actions__btn">Preview Card</button>
+    <button @click="printResidentCard(detailResident.id)" class="action-btn action-btn--primary detail-view-actions__btn">Print Card (CR100)</button>
+   </div>
+  </div>
+ </div>
+ </template>
+
+ <div x-show="!detailResident" class="card" x-cloak>
+ <div class="empty-state">
+ <div class="empty-state__icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M5 20c0-4 3-7 7-7s7 3 7 7"/></svg></div>
+ <div class="empty-state__title">No resident selected</div>
+ <div class="empty-state__desc">Select a resident from Dashboard or Search to view details.</div>
+ <ul class="detail-view-empty__steps" aria-hidden="true"><li><span>1</span> Search</li><li><span>2</span> View</li><li><span>3</span> Print</li></ul>
+ <button @click="closeDetail()" class="action-btn action-btn--primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.74" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Back</button>
+ </div>
+ </div>
+ </div>
+
+ </main>
+
+ <!-- Toast — semantic, no emoji -->
+ <div x-show="toast.show" x-cloak
+ role="status" aria-live="polite" aria-atomic="true"
+ x-transition:enter="transition ease-out duration-200"
+ x-transition:enter-start="opacity-0 translate-y-2"
+ x-transition:enter-end="opacity-100 translate-y-0"
+ x-transition:leave="transition ease-in duration-150"
+ x-transition:leave-start="opacity-100 translate-y-0"
+ x-transition:leave-end="opacity-0 translate-y-2"
+ class="toast"
+ :class="{
+ 'toast--success': toast.type === 'success',
+ 'toast--error': toast.type === 'error',
+ 'toast--info': toast.type === 'info'
+ }">
+ <span class="toast__icon" aria-hidden="true">
+ <svg x-show="toast.type === 'success'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+ <svg x-show="toast.type === 'error'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+ <svg x-show="toast.type === 'info'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+ </span>
+ <span class="text-sm font-semibold" x-text="toast.message"></span>
+ </div>
+ </div>
+
+ <script src="js/logger.js"></script>
+ <script src="js/api.js"></script>
+ <script src="js/helpers.js"></script>
+ <!-- Modular app (replaces monolithic app.js) — load order matters: core first, then views -->
+ <script src="js/app.core.js"></script>
+ <script src="js/app.register.js"></script>
+ <script src="js/app.search.js"></script>
+ <script src="js/app.settings.js"></script>
+ <script src="js/app.detail.js"></script>
+ <script src="js/app.dashboard.js"></script>
+ <script src="js/app.js"></script>
+</body>
+</html>
