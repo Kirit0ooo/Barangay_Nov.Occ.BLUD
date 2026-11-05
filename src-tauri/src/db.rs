@@ -14,36 +14,28 @@ pub struct AppState {
 }
 
 /// Host-native default root (used only when no project markers are found).
-/// Keeps path semantics native so probing never creates a literal `D:\...`
-/// junk directory on Unix hosts (which used to poison every photo/asset
-/// lookup and produced blank ID photos in PDF + preview).
+/// Keeps path semantics native so probing never creates a literal junk
+/// directory on Unix hosts.
 pub fn default_root() -> PathBuf {
-    #[cfg(windows)]
-    {
-        PathBuf::from(r"D:\Barangay\barangay-id-system")
-    }
-    #[cfg(not(windows))]
-    {
-        // Portable fallback: walk up from the executable location looking
-        // for project markers (src-tauri/ or barangay.ico), max 6 levels.
-        // Final fallback is current_dir() — keeps all data inside the
-        // project folder. Never returns paths under /tmp, /var, or home.
-        if let Ok(exe) = std::env::current_exe() {
-            let mut dir = exe.parent().map(|p| p.to_path_buf());
-            for _ in 0..6 {
-                if let Some(d) = dir.clone() {
-                    if d.join("src-tauri").exists() || d.join("barangay.ico").exists() {
-                        return d;
-                    }
-                    dir = d.parent().map(|p| p.to_path_buf());
-                } else {
-                    break;
+    // Portable fallback: walk up from the executable location looking
+    // for project markers (src-tauri/ or barangay.ico), max 6 levels.
+    // Final fallback is current_dir() — keeps all data inside the
+    // project folder. Never returns paths under /tmp, /var, or home.
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.parent().map(|p| p.to_path_buf());
+        for _ in 0..6 {
+            if let Some(d) = dir.clone() {
+                if d.join("src-tauri").exists() || d.join("barangay.ico").exists() {
+                    return d;
                 }
+                dir = d.parent().map(|p| p.to_path_buf());
+            } else {
+                break;
             }
         }
-        // Last resort: current working directory
-        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
     }
+    // Last resort: current working directory
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
 /// M3: writability probe — never create data under a read-only install dir
@@ -64,17 +56,7 @@ pub fn dir_is_writable(dir: &Path) -> bool {
 pub fn get_project_root() -> Option<PathBuf> {
     // Single canonical resolution: accept a fixed candidate ONLY when it
     // already carries project markers. Never create directories while
-    // probing — on non-Windows hosts `create_dir_all("D:\\...")` would
-    // create a literal junk dir inside cwd, get returned as the "root",
-    // and break every photo/asset lookup downstream (blank ID photos).
-    for candidate in [
-        PathBuf::from(r"D:\Barangay\barangay-id-system"),
-        PathBuf::from("/mnt/d/Barangay/barangay-id-system"),
-    ] {
-        if candidate.join("barangay.ico").exists() || candidate.join("src-tauri").exists() {
-            return Some(candidate);
-        }
-    }
+    // probing.
     if let Ok(exe) = std::env::current_exe() {
         let mut dir = exe.parent().map(|p| p.to_path_buf());
         for _ in 0..6 {
@@ -101,19 +83,14 @@ pub fn get_project_root() -> Option<PathBuf> {
             }
         }
     }
-    // Portable/installed fallback (Win10/11 x64): when the MSI/NSIS/portable
-    // exe runs from Program Files or a USB stick, no project markers travel
-    // with it (only bundled resources do). Use the exe's own directory so
+    // Portable/installed fallback: when the MSI/NSIS/portable exe runs
+    // from Program Files or a USB stick, no project markers travel with it
+    // (only bundled resources do). Use the exe's own directory so
     // data/logs/tmp stay beside the installed exe instead of escaping to a
-    // fixed D:\ drive. Never returns C:/Users, AppData, or TEMP.
-    // M3: skip a non-writable exe dir (MSI perMachine under C:\Program Files)
-    // so callers fall through to the portable default or fail gracefully —
-    // never select a root we cannot write data under.
+    // fixed drive. Never returns C:/Users, AppData, or TEMP.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             if dir_is_writable(dir) {
-                // Prefer a parent that already hosts data/logs (portable USB
-                // second run); otherwise the exe dir itself (fresh MSI install).
                 let mut d = dir.to_path_buf();
                 for _ in 0..3 {
                     if d.join("data").exists() || d.join("logs").exists() {
@@ -159,17 +136,13 @@ pub fn get_app_data_dir() -> PathBuf {
     let _ = fs::create_dir_all(get_documents_excel_dir());
     // Prefer <resolved-root>/data first so photos + DB always agree with
     // get_project_root(); host-native fixed candidate only as backup.
-    // (Never probe a Windows path on Unix: create_dir_all would mint a junk
-    // literal `D:\...` dir and poison photo lookups.)
     // M3: probe writability before committing to a root (MSI perMachine exe
-    // dirs are read-only). First writable candidate wins; the portable D:\
-    // layout is unchanged when it resolves (primary deployment).
+    // dirs are read-only). First writable candidate wins.
     if let Some(root) = get_project_root() {
         let candidate = root.join("data");
         if dir_is_writable(&candidate) {
             fs::create_dir_all(candidate.join("photos")).ok();
             fs::create_dir_all(candidate.join("backups")).ok();
-            // data/id_cards/ was PDF-era output staging — no longer created.
             fs::create_dir_all(root.join("logs")).ok();
             fs::create_dir_all(root.join("tmp")).ok();
             return candidate;
@@ -179,8 +152,6 @@ pub fn get_app_data_dir() -> PathBuf {
         if dir_is_writable(&candidate) {
             fs::create_dir_all(candidate.join("photos")).ok();
             fs::create_dir_all(candidate.join("backups")).ok();
-            // data/id_cards/ was PDF-era output staging — no longer created.
-            // F7: no parent().unwrap() — skip log/tmp setup if parent missing.
             if let Some(parent) = candidate.parent() {
                 fs::create_dir_all(parent.join("logs")).ok();
                 fs::create_dir_all(parent.join("tmp")).ok();
@@ -191,13 +162,13 @@ pub fn get_app_data_dir() -> PathBuf {
     // M3: no panic — return the best-effort path and let init_db surface a
     // user-facing error (MSI perMachine: reinstall per-user or portable).
     // Never silently escape to AppData/relative path.
-    tracing::error!("Isolation violation: no writable project data dir. Run from D:\\Barangay\\barangay-id-system (or its WSL mount), or reinstall per-user/portable. No fallback to AppData is allowed per mandate.");
+    tracing::error!("Isolation violation: no writable project data dir. Run from the project folder, or reinstall per-user/portable. No fallback to AppData is allowed per mandate.");
     get_project_root().unwrap_or_else(default_root).join("data")
 }
 
 /// Validate that a user-supplied path is inside the isolated project tree before any write.
 /// Returns canonicalized absolute path or Err.
-/// Filename sanitization: strips Windows-illegal chars (\\/:*?"<>|), control
+/// Filename sanitization: strips Windows-illegal chars (\/:*?"<>|), control
 /// chars and path separators from the final file-name component, collapses
 /// whitespace to a single underscore, truncates the stem, and enforces that
 /// the result is non-empty. Parent directories are NOT altered.
@@ -227,8 +198,12 @@ pub fn sanitize_file_name_component(raw_name: &str, max_stem_len: usize) -> Stri
     }
     // Split stem/ext so length cap applies to stem only
     let (stem, ext) = match out.rfind('.') {
-        Some(i) if i > 0 => (out[..i].to_string(), out[i..].to_string()),
-        _ => (out, String::new()),
+        Some(i) if i > 0 => {
+            (out[..i].to_string(), out[i..].to_string())
+        }
+        _ => {
+            (out, String::new())
+        }
     };
     let stem_chars: Vec<char> = stem.chars().collect();
     let stem: String = if stem_chars.len() > max_stem_len {
@@ -352,7 +327,9 @@ fn lexical_normalize(path: &Path) -> PathBuf {
                 out.pop();
             }
             Component::CurDir => {}
-            c => out.push(c.as_os_str()),
+            c => {
+                out.push(c.as_os_str());
+            }
         }
     }
     out
@@ -392,7 +369,6 @@ pub fn validate_isolated_write_path(raw: &Path) -> Result<PathBuf, String> {
         lexical_normalize(&root.join(raw))
     };
     // Explicit traversal check: raw components must not escape via ParentDir beyond root
-    // Lexical check first — if any ParentDir in raw would escape after join, reject early
     let normalized = lexical_normalize(&abs);
     if !path_starts_with_inside(&normalized, &root_canonical)
         && !path_starts_with_inside(&abs, &root)
@@ -490,7 +466,7 @@ pub async fn init_db() -> Result<SqlitePool> {
             // M3: user-facing (no panic) — typical cause is an MSI perMachine
             // install under C:\Program Files with no writable data dir.
             anyhow::anyhow!(
-                "Cannot open database at {}: {}. Reinstall per-user/portable or run from D:\\Barangay\\barangay-id-system.",
+                "Cannot open database at {}: {}. Reinstall per-user/portable or run from the project folder.",
                 db_path.display(),
                 e
             )
