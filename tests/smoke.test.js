@@ -1,4 +1,4 @@
-// Smoke tests — must stay inside D:\Barangay\barangay-id-system\tests\
+// Smoke tests — must stay inside cd <repo>\tests\
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 
@@ -25,4 +25,4 @@ for (const [name, ok] of checks) {
   if (!ok) failed++;
 }
 if (failed) { console.error(`\n${failed} check(s) failed`); process.exit(1); }
-else console.log(`\nAll ${checks.length} isolation smoke checks passed — all artifacts inside D:\\Barangay\\barangay-id-system`);
+else console.log(`\nAll ${checks.length} isolation smoke checks passed — all artifacts inside D:\\<repo>\\barangay-id-system`);
