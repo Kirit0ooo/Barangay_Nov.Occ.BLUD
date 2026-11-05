@@ -1,9 +1,9 @@
 # Barangay Resident ID Registration System
 
 **Offline-first desktop app for registering Barangay residents, printing CR100 ID cards, and exporting Excel — built with Rust + Tauri + SQLite + Alpine.js.**  
-Target: **5,000–10,000 residents**, **Windows 10/11 primary** (Linux/WSL secondary), **100% offline**, portable on `D:\Barangay\barangay-id-system` with zero cloud dependencies.
+Target: **5,000–10,000 residents**, **Windows 10/11 primary** (Linux/WSL secondary), **100% offline**, portable on any local folder with zero cloud dependencies.
 
-> **Version:** 1.0.0 · **Identifier:** `com.barangay.idsystem` · **Edition:** Tauri 1.5 · **Size:** ~18 MB installed
+> **Version:** 1.0.0 · **Identifier:** `com.barangay.idsystem` · **Edition:** Tauri 1.5
 
 ---
 
@@ -37,16 +37,16 @@ Target: **5,000–10,000 residents**, **Windows 10/11 primary** (Linux/WSL secon
 
 ```bat
 :: Windows — double-click run.bat OR Powershell
-D:\Barangay\barangay-id-system> run.bat
+run.bat
 :: or
-D:\Barangay\barangay-id-system> powershell -ExecutionPolicy Bypass -File .\run.ps1
+powershell -ExecutionPolicy Bypass -File .\run.ps1
 :: then use build.bat for installer
-D:\Barangay\barangay-id-system> build.bat
+build.bat
 ```
 
 WSL (dev only, needs GTK for cargo check):
 ```bash
-cd /mnt/d/Barangay/barangay-id-system
+cd <project-root>
 npm install
 npx tauri dev
 ```
@@ -55,10 +55,10 @@ npx tauri dev
 
 ## Folder Contract
 
-**Isolation Mandate:** *All* data, tests, tmp, cache, logs, build outputs **MUST** stay inside `D:\Barangay\barangay-id-system`. No writes to `%APPDATA%`, `%TEMP%`, drive root, or home. Verified by `tests/smoke.test.js` + `tests/regression.test.js`.
+**Isolation Mandate:** *All* data, tests, tmp, cache, logs, build outputs **MUST** stay inside the project folder. No writes to `%APPDATA%`, `%TEMP%`, drive root, or home. Verified by `tests/smoke.test.js` + `tests/regression.test.js`.
 
 ```
-D:\Barangay\
+<project-root>\
  ├── BarangayResidentID.txt              # original spec
  └── barangay-id-system\                 # ← ALL PROGRAM FILES (portable)
       ├── barangay.ico / barangay.png    # app icon
@@ -109,7 +109,7 @@ D:\Barangay\
       └── README.md
 ```
 
-**How isolation works:** `src-tauri/src/db.rs:get_project_root()` walks `D:\ → exe parent → cwd` looking for marker `barangay.ico` or `src-tauri/`; `get_app_data_dir()` only returns inside that root; `logger::get_logs_dir()` returns `Result` (OS-temp fallback + error log, never `panic!`) (no `ProjectDirs` AppData fallback). Every write path (`backup`, `export`, `id_card`) calls `validate_isolated_write_path()` which asserts `parent.starts_with(root)`. `main.rs` pins `TMP/TEMP/TMPDIR/WEBVIEW2_USER_DATA_FOLDER` to `tmp/` at startup. `.npmrc` `cache=./.npm-cache` + Tauri `fs.scope` tight to `$APP/photos|documents|config|backups` + `$RESOURCE` prevents escape.
+**How isolation works:** `src-tauri/src/db.rs:get_project_root()` walks the drive root → exe parent → cwd looking for marker `barangay.ico` or `src-tauri/`; `get_app_data_dir()` only returns inside that root; `logger::get_logs_dir()` returns `Result` (OS-temp fallback + error log, never `panic!`) (no `ProjectDirs` AppData fallback). Every write path (`backup`, `export`, `id_card`) calls `validate_isolated_write_path()` which asserts `parent.starts_with(root)`. `main.rs` pins `TMP/TEMP/TMPDIR/WEBVIEW2_USER_DATA_FOLDER` to `tmp/` at startup. `.npmrc` `cache=./.npm-cache` + Tauri `fs.scope` tight to `$APP/photos|documents|config|backups` + `$RESOURCE` prevents escape.
 
 ---
 
@@ -117,8 +117,8 @@ D:\Barangay\
 
 ### Windows (primary)
 
-1. **Rust 1.75+** — https://rustup.rs — `rustc --version` (current: 1.98.1)
-2. **Node.js LTS 18+** — https://nodejs.org — `node --version` (tested: 22/24) + `npm --version`
+1. **Rust 1.75+** — https://rustup.rs — `rustc --version`
+2. **Node.js LTS 18+** — https://nodejs.org — `node --version` + `npm --version`
 3. **WebView2** — preinstalled on Win11; Win10: https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 4. **Visual Studio Build Tools** — `Desktop development with C++` workload (for `tauri build` MSI). Without it `tauri dev` still runs (debug).
 
@@ -131,7 +131,7 @@ GTK needed for `cargo check`: `libglib2.0-dev libgtk-3-dev pkg-config`. Build no
 ## Installation & Run
 
 ```bat
-cd /d D:\Barangay\barangay-id-system
+cd <project-root>
 
 :: 1. deps (isolated cache .\.npm-cache, target inside src-tauri\target)
 npm install
@@ -157,7 +157,7 @@ set RUST_LOG=debug && run.bat
 ## Production Build
 
 ```bat
-cd /d D:\Barangay\barangay-id-system
+cd <project-root>
 build.bat
 :: or
 powershell -ExecutionPolicy Bypass -File .\build.ps1
@@ -179,7 +179,7 @@ Install on Win10/11 (per-user MSI — no admin rights needed). The installer cre
  ├── Documents\  logs\  tmp\  config\
 ```
 
-One folder, exe + data together. Details: `src-tauri/wix/main.wxs` is the official Tauri v1.6 WiX template with two surgical changes — `InstallScope perUser` (+`limited` privileges) and `INSTALLDIR` under `LocalAppDataFolder` instead of Program Files (read-only; the app refuses to start there by design). If a `D:\Barangay\barangay-id-system\data` folder already exists, the app keeps using it (portable/USB workflow unchanged).
+One folder, exe + data together. Details: `src-tauri/wix/main.wxs` is the official Tauri v1.6 WiX template with two surgical changes — `InstallScope perUser` (+`limited` privileges) and `INSTALLDIR` under `LocalAppDataFolder` instead of Program Files (read-only; the app refuses to start there by design). If a `<project-root>\data` folder already exists, the app keeps using it (portable/USB workflow unchanged).
 
 > **Migrating from an old perMachine install:** uninstall the old MSI first (Windows can't upgrade perMachine → perUser in place), back up via Settings → Backup, then install the new MSI and restore.
 > **Uninstall wipes the install folder including `data\`** (stock WiX `RemoveFolder` behavior) — always take a Backup first.
@@ -224,7 +224,7 @@ index.html (Alpine) —api.js—> Tauri invoke —main.rs—> Rust commands
 | Layer | Tech | Version | Notes |
 |---|---|---|---|
 | Desktop | Tauri | 1.5 (cli 1.6.3) | `custom-protocol`, `fs-write/read`, `dialog-all`, `shell-open` |
-| Language | Rust | 1.98.1 | `edition 2021` |
+| Language | Rust | `edition 2021` |
 | Async | tokio | 1 full | |
 | DB | sqlx + sqlite | 0.7 | `runtime-tokio`, 5 conns, WAL |
 | QR (preview/print) | qrcode | 0.13 + image 0.24 + base64 0.21 | preview data-URL |
@@ -401,8 +401,8 @@ with a legacy cmd fallback. `run.ps1` is canonical — `.bat` wrappers only forw
 
 ## Deployment
 
-* Copy entire `D:\Barangay\barangay-id-system` to USB — data travels with it (portable).
-* MSI installs per-user to LocalAppData (no admin; see wix/main.wxs) but data check still prefers `D:\Barangay\barangay-id-system\data` if mounted (via `get_project_root()`), else install-adjacent `data\`.
+* Copy the project folder to USB — data travels with it (portable).
+* MSI installs per-user to LocalAppData (no admin; see wix/main.wxs) but data check still prefers `<project-root>\data` if mounted (via `get_project_root()`), else install-adjacent `data\`.
 * For air-gapped: vendored `src/vendor/alpine.min.js` + prebuilt `src/css/tailwind.css` — no CDN needed.
 
 ---
