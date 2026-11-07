@@ -23,6 +23,7 @@ Documents/Excel/*
 Documents/Verify/*
 !Documents/Verify/.gitkeep
 !Documents/Verify/README.md
+config/civic.json
 config/qr_hmac_secret
 config/qr_hmac_secret.tmp
 config/id_verify_private
@@ -42,3 +43,7 @@ data/.last_optimize
 
 # Encryption key (AES-256, must never be committed — sits beside data by design)
 .crypto-key/
+
+# Pi agent state (task output / session artifacts — not project source)
+.pi/
+.superpowers/
