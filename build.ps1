@@ -1,11 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Barangay ID System - portable release build (Tauri MSI/NSIS).
+    Barangay ID System - portable release build (Tauri NSIS; MSI target deferred).
 .DESCRIPTION
     Run:
       powershell -ExecutionPolicy Bypass -File .\build.ps1
-    Output stays isolated: src-tauri\target\x86_64-pc-windows-msvc\release\bundle\ (msi/ + nsis/) + portable exe
+    Output stays isolated: src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\ + portable exe
     Transcript: logs\build-YYYYMMDD-HHmmss.log
     Portable pins (same as run.ps1) before any npm/cargo:
       NPM_CONFIG_CACHE=./.npm-cache CARGO_TARGET_DIR=./src-tauri/target TMP/TEMP/TMPDIR=./tmp
@@ -55,7 +55,10 @@ Write-Verbose '[Barangay ID] Portable env pins applied (isolated caches, no %TEM
 Ensure-DataDir $Root
 
 if ($Help) {
-    Write-Host @"
+    # Single-quoted here-string on purpose: the text mentions $Prereqs, and under
+    # Set-StrictMode -Version Latest a double-quoted here-string threw
+    # "The variable '$Prereqs' cannot be retrieved because it has not been set".
+    Write-Host @'
 Barangay ID System - build.ps1 (portable release build)
 Usage:
   powershell -ExecutionPolicy Bypass -File .\build.ps1
@@ -66,18 +69,99 @@ Usage:
   build.bat -NoClean    # keep previous bundle/ outputs
 Pre-build: stale bundle/ outputs removed (see -NoClean); patch version auto-increments
 x.y.z -> x.y.z+1 across package.json / package-lock.json / tauri.conf.json / Cargo.toml /
-Cargo.lock (see -NoBump) so the compiled binary and installers carry the new version.
-Output: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/ (msi/ + nsis/) + portable exe
+Cargo.lock (see -NoBump) so the compiled binary and installers carry the new version. The highest
+version found in those files is the base and the others are synced to it, so a tree whose manifests
+disagree repairs itself instead of aborting the build.
+Output: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/ + portable exe
 Transcript: logs/build-YYYYMMDD-HHmmss.log (isolated)
-Prereqs (fail-fast $Prereqs gate): Node 20+, npm, Rust MSVC, MSVC linker, WiX v3.11, NSIS, rustup (warn-only).
-Future deps = one $Prereqs row (Name/Level/Test/Fix). MSI also downloads the WebView2 offline installer at build time (network needed).
+Prereqs (fail-fast gate): Node 20+, npm, Rust MSVC, MSVC linker. Optional (warn-only, no action
+needed): WiX v3 + NSIS 3 (Tauri downloads both into src-tauri\target\.tauri on first build) and
+rustup.
+Future deps = one row in the $Prereqs table (Name/Level/Test/Fix). The MSI leg (when re-enabled) also downloads the WebView2 offline installer at build time (network needed).
 Portable pins BEFORE any npm/cargo: NPM_CONFIG_CACHE=./.npm-cache CARGO_TARGET_DIR=./src-tauri/target TMP/TEMP/TMPDIR=./tmp
 Build includes get_cards_batch (bulk print) + optimize_database (E2) - no extra flags needed.
 For comment-based help: Get-Help .\build.ps1 -Detailed
-"@
+'@
     try { Get-Help $MyInvocation.MyCommand.Path -Detailed -ErrorAction SilentlyContinue | Out-String | Write-Host } catch {}
     Restore-EnvPins
     exit 0
+}
+
+# ---- Manifest version bump -------------------------------------------------
+# Each version slot is located by its own SHAPE, never by the previous number,
+# so a manifest that has already drifted is repaired instead of skipped. The
+# lockfile's root "version" line ends with a comma, which is why the previous
+# `"$`-anchored pattern silently never matched it (logs/build-20261106-*.log).
+# All slots are resolved before the first write, and Cargo.toml is anchored to
+# column 0 so a dependency pin can never be rewritten.
+function Invoke-PatchVersionBump {
+    param([string]$Root)
+
+    $noBom = New-Object System.Text.UTF8Encoding $false
+    $manifests = @(
+        @{ File = 'package.json'; Label = 'package.json'
+           Read = '(?m)^  "version": "([^"]+)"'
+           Write = '(?m)^(  "version": ")[^"]+(")' },
+        @{ File = 'package-lock.json'; Label = 'package-lock.json (root)'
+           Read = '(?m)^  "version": "([^"]+)"'
+           Write = '(?m)^(  "version": ")[^"]+(")' },
+        @{ File = 'package-lock.json'; Label = 'package-lock.json (packages entry)'
+           Read = '"name": "barangay-id-system",[ \t]*\r?\n[ \t]*"version": "([^"]+)"'
+           Write = '("name": "barangay-id-system",[ \t]*\r?\n[ \t]*"version": ")[^"]+(")' },
+        @{ File = 'src-tauri\tauri.conf.json'; Label = 'src-tauri/tauri.conf.json'
+           Read = '"version": "([^"]+)"'
+           Write = '("version": ")[^"]+(")' },
+        @{ File = 'src-tauri\Cargo.toml'; Label = 'src-tauri/Cargo.toml'
+           Read = '(?m)^version = "([^"]+)"'
+           Write = '(?m)^(version = ")[^"]+(")' },
+        @{ File = 'src-tauri\Cargo.lock'; Label = 'src-tauri/Cargo.lock'
+           Read = 'name = "barangay-id-system"\r?\nversion = "([^"]+)"'
+           Write = '(name = "barangay-id-system"\r?\nversion = ")[^"]+(")' }
+    )
+
+    # 1. Resolve every slot. Highest version found is the base, so a tree whose
+    #    manifests disagree is synced up instead of skipped.
+    $slots = @()
+    foreach ($m in $manifests) {
+        $fp = Join-Path $Root $m.File
+        if (-not (Test-Path $fp)) { throw "Auto-version: $($m.File) not found at $fp" }
+        $text = [IO.File]::ReadAllText($fp, [System.Text.Encoding]::UTF8)
+        $hit = [regex]::Match($text, $m.Read)
+        if (-not $hit.Success) { throw "Auto-version: no version slot in $($m.Label) - pattern drift, fix the `$manifests table in Invoke-PatchVersionBump" }
+        if ($hit.Groups[1].Value -notmatch '^\d+\.\d+\.\d+$') { throw "Auto-version: $($m.Label) version '$($hit.Groups[1].Value)' is not x.y.z - fix it manually" }
+        $slots += @{ File = $m.File; Label = $m.Label; Version = $hit.Groups[1].Value; Text = $text; Write = $m.Write }
+    }
+    $base = ($slots | ForEach-Object { [version]$_.Version } | Sort-Object | Select-Object -Last 1)
+    $newVer = "$($base.Major).$($base.Minor).$($base.Build + 1)"
+    Write-Host "[Barangay ID] Auto-version: $($base.ToString(3)) -> $newVer" -ForegroundColor Cyan
+    $versions = @($slots | ForEach-Object { $_.Version } | Select-Object -Unique)
+    if ($versions.Count -gt 1) {
+        Write-Host "[Barangay ID] Manifest versions disagreed ($($versions -join ', ')) - syncing every slot to $newVer" -ForegroundColor DarkGray
+        foreach ($s in $slots) { Write-Host "  $($s.Label) was $($s.Version)" -ForegroundColor DarkGray }
+    }
+
+    # 2. Every slot must be writable before the first write, so a pattern
+    #    mismatch can never leave a half-bumped tree behind.
+    $unwritable = @($slots | Where-Object { -not [regex]::IsMatch($_.Text, $_.Write) })
+    if ($unwritable.Count -gt 0) {
+        throw ("Auto-version: cannot rewrite these slots (pattern drift, fix the `$manifests table in Invoke-PatchVersionBump):`n" +
+               (($unwritable | ForEach-Object { "  - $($_.Label)" }) -join "`n"))
+    }
+
+    # 3. Write each slot from the file's CURRENT text (package-lock.json holds
+    #    two slots), then re-read and confirm the new version stuck.
+    foreach ($s in $slots) {
+        $fp = Join-Path $Root $s.File
+        $current = [IO.File]::ReadAllText($fp, [System.Text.Encoding]::UTF8)
+        [IO.File]::WriteAllText($fp, [regex]::Replace($current, $s.Write, ('${1}' + $newVer + '${2}')), $noBom)
+    }
+    $wrong = @()
+    foreach ($m in $manifests) {
+        $hit = [regex]::Match([IO.File]::ReadAllText((Join-Path $Root $m.File), [System.Text.Encoding]::UTF8), $m.Read)
+        $actual = if ($hit.Success) { $hit.Groups[1].Value } else { '<no match>' }
+        if ($actual -ne $newVer) { $wrong += "  - $($m.Label) is $actual, expected $newVer" }
+    }
+    if ($wrong.Count -gt 0) { throw ("Auto-version: verification failed after write:`n" + ($wrong -join "`n")) }
 }
 
 # ---- -Audit: dependency audit, warn-only (parity with run.ps1 -Audit) ----
@@ -107,6 +191,8 @@ try {
     # Level 'required' throws once listing ALL missing tools; 'warn' prints
     # yellow and continues. Tests must be side-effect free (Get-Command /
     # Test-Path only) - version echoes come after the gate passes.
+    # WiX/NSIS stay 'warn' on purpose: Tauri v1 provisions its own copies
+    # (tauri.bundle.useLocalToolsDir) and never uses a system install.
     $Prereqs = @(
         @{ Name = 'Node.js 20+'; Level = 'required'; Fix = 'https://nodejs.org (LTS 20+; CI pins 20, npm test needs import.meta.dirname)';
            Test = { [bool](Get-Command 'node' -ErrorAction SilentlyContinue) } },
@@ -123,16 +209,17 @@ try {
                         if ($vsPath -and (Test-Path (Join-Path $vsPath 'VC\Tools\MSVC'))) { return $true }
                     }
                     return (Test-Path (Join-Path ${env:ProgramFiles} 'Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC')) } },
-        @{ Name = 'WiX Toolset v3.11 (MSI leg; Tauri v1 rejects v4+)'; Level = 'required'; Fix = 'https://wixtoolset.org/releases/ (v3.11)';
-           Test = { if (Test-Path (Join-Path ${env:ProgramFiles(x86)} 'WiX Toolset v3.11\bin\candle.exe')) { return $true }
+        @{ Name = 'WiX Toolset v3 (MSI leg)'; Level = 'warn'; Fix = 'Tauri provisions this itself on the first build - no manual install needed';
+           Test = { if (Test-Path (Join-Path $Root 'src-tauri\target\.tauri\WixTools314\candle.exe')) { return $true }
+                    if (Test-Path (Join-Path ${env:ProgramFiles(x86)} 'WiX Toolset v3.11\bin\candle.exe')) { return $true }
                     if (Get-Command 'candle.exe' -ErrorAction SilentlyContinue) {
                         $ver = (& candle.exe -version 2>$null | Out-String).Trim()
-                        if ($ver -match 'v3\.11') { return $true }
-                        Write-Host "[wix] candle.exe on PATH is v4+ (Tauri v1 needs v3.11): $ver" -ForegroundColor Yellow
+                        return ($ver -match 'v3\.11')
                     }
                     return $false } },
-        @{ Name = 'NSIS makensis (nsis leg)'; Level = 'required'; Fix = 'https://nsis.sourceforge.io/Download';
-           Test = { if (Get-Command 'makensis.exe' -ErrorAction SilentlyContinue) { return $true }
+        @{ Name = 'NSIS makensis (nsis leg)'; Level = 'warn'; Fix = 'Tauri provisions this itself on the first build - no manual install needed';
+           Test = { if (Test-Path (Join-Path $Root 'src-tauri\target\.tauri\NSIS\makensis.exe')) { return $true }
+                    if (Get-Command 'makensis.exe' -ErrorAction SilentlyContinue) { return $true }
                     return (Test-Path 'C:\Program Files (x86)\NSIS\makensis.exe') } },
         @{ Name = 'rustup (auto-adds the x86_64-pc-windows-msvc target below)'; Level = 'warn'; Fix = 'https://rustup.rs';
            Test = { [bool](Get-Command 'rustup' -ErrorAction SilentlyContinue) } }
@@ -142,15 +229,15 @@ try {
         $ok = $false
         try { $ok = [bool](& $p.Test) } catch { $ok = $false }
         if ($ok) { Write-Host "ok: $($p.Name)" -ForegroundColor Green }
-        elseif ($p.Level -eq 'warn') { Write-Host "missing (warn-only): $($p.Name) - $($p.Fix)" -ForegroundColor Yellow }
+        elseif ($p.Level -eq 'warn') { Write-Host "optional: $($p.Name) not found - $($p.Fix)" -ForegroundColor Yellow }
         else { $missing += "  - $($p.Name): $($p.Fix)" }
     }
     if ($missing.Count -gt 0) { throw ("Missing build dependencies:`n" + ($missing -join "`n") + "`nInstall the above, then re-run .\build.ps1") }
-    Write-Host '[note] MSI embeds the WebView2 offline installer (~150MB download at build time - network required even though the app itself is offline-first)' -ForegroundColor DarkGray
+    Write-Host '[note] The installer uses the WebView2 bootstrapper (network needed the first time it installs; the app itself is offline-first)' -ForegroundColor DarkGray
     try { $v = (Invoke-SafeNative node --version | Out-String).Trim(); if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }; Write-Host "node $v" -ForegroundColor Green
         $m = [regex]::Match($v, 'v(\d+)'); if ($m.Success -and [int]$m.Groups[1].Value -lt 20) { Write-Host '[WARN] Node < 20: npm test needs Node 20.11+ (import.meta.dirname)' -ForegroundColor Yellow } } catch { throw 'Node/npm not found - https://nodejs.org' }
     try { $v = (Invoke-SafeNative npm --version | Out-String).Trim(); if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }; Write-Host "npm $v (cache $env:NPM_CONFIG_CACHE)" -ForegroundColor Green } catch { throw 'npm not found - reinstall Node.js' }
-    try { $v = (Invoke-SafeNative rustc --version | Out-String).Trim(); if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }; Write-Host "$v" -ForegroundColor Green } catch { throw 'Rust not found - https://rustup.rs (needed for tauri build MSI)' }
+    try { $v = (Invoke-SafeNative rustc --version | Out-String).Trim(); if ($LASTEXITCODE -ne 0) { throw "exit $LASTEXITCODE" }; Write-Host "$v" -ForegroundColor Green } catch { throw 'Rust not found - https://rustup.rs (needed for tauri build)' }
     $prevEap=$ErrorActionPreference; $ErrorActionPreference='Continue'
     # Skip the network install when the target is already present (fail-open:
     # any check failure falls through to the install, preserving old behavior).
@@ -186,33 +273,12 @@ try {
 
     # Auto-version: bump patch x.y.z -> x.y.z+1 across every manifest BEFORE
     # tauri build, so the compiled binary and installers carry the new version.
-    # -NoBump skips (use for rebuilds of the same version).
+    # -NoBump skips (use for rebuilds of the same version). The ShouldProcess
+    # gate stays here in script scope, so -WhatIf behaves exactly as before;
+    # the version work itself lives in Invoke-PatchVersionBump, defined above.
     if (-not $NoBump) {
         if ($PSCmdlet.ShouldProcess('manifests', 'Auto-bump patch version x.y.z -> x.y.z+1 across all manifests')) {
-            $pkgJsonPath = Join-Path $Root 'package.json'
-            $oldVer = (Get-Content $pkgJsonPath -Raw | ConvertFrom-Json).version
-            if ($oldVer -notmatch '^\d+\.\d+\.\d+$') { throw "Auto-version: package.json version '$oldVer' is not x.y.z - fix it manually" }
-            $vp = $oldVer -split '\.'
-            $newVer = "$($vp[0]).$($vp[1]).$([int]$vp[2] + 1)"
-            Write-Host "[Barangay ID] Auto-version: $oldVer -> $newVer" -ForegroundColor Cyan
-            $oldRx = [regex]::Escape($oldVer)
-            $noBom = New-Object System.Text.UTF8Encoding $false
-            $bumpStages = @(
-                @{ File = 'package.json'; Pattern = '"version": "' + $oldRx + '"'; Replacement = '"version": "' + $newVer + '"' },
-                @{ File = 'package-lock.json'; Pattern = '(?m)^  "version": "' + $oldRx + '"$'; Replacement = '  "version": "' + $newVer + '"' },
-                @{ File = 'package-lock.json'; Pattern = '"name": "barangay-id-system",(\r?\n)      "version": "' + $oldRx + '"'; Replacement = '"name": "barangay-id-system",$1      "version": "' + $newVer + '"' },
-                @{ File = 'src-tauri\tauri.conf.json'; Pattern = '"version": "' + $oldRx + '"'; Replacement = '"version": "' + $newVer + '"' },
-                @{ File = 'src-tauri\Cargo.toml'; Pattern = 'version = "' + $oldRx + '"'; Replacement = 'version = "' + $newVer + '"' },
-                @{ File = 'src-tauri\Cargo.lock'; Pattern = 'name = "barangay-id-system"(\r?\n)version = "' + $oldRx + '"'; Replacement = 'name = "barangay-id-system"$1version = "' + $newVer + '"' }
-            )
-            foreach ($stage in $bumpStages) {
-                $fp = Join-Path $Root $stage.File
-                $txt = [IO.File]::ReadAllText($fp, [System.Text.Encoding]::UTF8)
-                $txt = [regex]::Replace($txt, $stage.Pattern, $stage.Replacement)
-                [IO.File]::WriteAllText($fp, $txt, $noBom)
-                $check = [IO.File]::ReadAllText($fp, [System.Text.Encoding]::UTF8)
-                if ($check -notmatch [regex]::Escape($newVer)) { throw "Auto-version: $($stage.File) still pins $oldVer (pattern drift) - update build.ps1 bump stages" }
-            }
+            Invoke-PatchVersionBump -Root $Root
         }
     }
 
@@ -253,11 +319,11 @@ try {
     } finally { $ErrorActionPreference=$prevEap }
     if ($LASTEXITCODE -ne 0) { throw "tauri build (x86_64-pc-windows-msvc) failed (exit $LASTEXITCODE)" }
 
-    Write-Host "`n[Barangay ID] x64 release outputs (portable exe + msi/nsis bundles):" -ForegroundColor Green
+    Write-Host "`n[Barangay ID] x64 release outputs (portable exe + nsis bundle):" -ForegroundColor Green
     Get-ChildItem (Join-Path $Root 'src-tauri\target\x86_64-pc-windows-msvc\release') -File -ErrorAction SilentlyContinue |
         Where-Object { $_.Extension -in @('.exe', '.msi') } | Select-Object Name, Length, LastWriteTime | Format-Table -AutoSize
 
-    Write-Host "`n[Barangay ID] Bundles at: src-tauri\target\x86_64-pc-windows-msvc\release\bundle\ (msi/ + nsis/)" -ForegroundColor Green
+    Write-Host "`n[Barangay ID] Bundles at: src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\" -ForegroundColor Green
     Get-ChildItem (Join-Path $Root 'src-tauri\target\x86_64-pc-windows-msvc\release\bundle') -Recurse -File -ErrorAction SilentlyContinue |
         Select-Object FullName, Length, LastWriteTime | Format-Table -AutoSize
 } catch [System.Management.Automation.PipelineStoppedException] {
